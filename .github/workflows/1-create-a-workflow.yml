@@ -1,71 +1,51 @@
-name: Step 1, Create a workflow
+name: Windows Cloud PC - Anydesk (Optimized)
 
-# This step triggers after every push to welcome-workflow.
-# This workflow updates from step 1 to step 2.
-
-# This will run every time we push to welcome-workflow.
-# Reference: https://docs.github.com/en/actions/learn-github-actions/events-that-trigger-workflows
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - welcome-workflow
-
-# Reference: https://docs.github.com/en/actions/security-guides/automatic-token-authentication
-permissions:
-  # Need `contents: read` to checkout the repository.
-  # Need `contents: write` to update the step metadata.
-  contents: write
 
 jobs:
-  # Get the current step to only run the main job when the learner is on the same step.
-  get_current_step:
-    name: Check current step number
-    runs-on: ubuntu-latest
+  build:
+    name: Start Building...
+    runs-on: windows-latest
+    timeout-minutes: 10080  # Máximo de 7 dias para evitar tempo de execução excessivo
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - id: get_step
+      - name: Downloading & Installing Essentials
         run: |
-          echo "current_step=$(cat ./.github/steps/-step.txt)" >> $GITHUB_OUTPUT
-    outputs:
-      current_step: ${{ steps.get_step.outputs.current_step }}
+          # Baixa o arquivo .bat para instalar componentes essenciais
+          Invoke-WebRequest -Uri "https://www.dropbox.com/scl/fi/7eiczvgil84czu55dxep3/Downloads.bat?rlkey=wzdc1wxjsph2b7r0atplmdz3p&dl=1" -OutFile "Downloads.bat"
+          # Executa o script .bat para instalar os componentes
+          cmd /c Downloads.bat
 
-  on_create_workflow:
-    name: On create workflow
-    needs: get_current_step
+      - name: Log In To AnyDesk
+        run: |
+          # Verifica se o arquivo start.bat existe antes de executar
+          if (Test-Path "start.bat") {
+            cmd /c start.bat
+          } else {
+            Write-Host "Arquivo start.bat não encontrado. Verifique a configuração."
+          }
 
-    # We will only run this action when:
-    # 1. This repository isn't the template repository.
-    # 2. The step is currently 1.
-    # Reference: https://docs.github.com/en/actions/learn-github-actions/contexts
-    # Reference: https://docs.github.com/en/actions/learn-github-actions/expressions
-    if: >-
-      ${{ !github.event.repository.is_template
-          && needs.get_current_step.outputs.current_step == 1 }}
+      - name: Monitor and Restart AnyDesk if Needed
+        run: |
+          # Monitora a conexão do AnyDesk e reinicia se necessário
+          while ($true) {
+            $process = Get-Process -Name "AnyDesk" -ErrorAction SilentlyContinue
+            if (-not $process) {
+              Write-Host "AnyDesk não está rodando, reiniciando..."
+              cmd /c start.bat
+            }
+            Start-Sleep -Seconds 300  # Verifica a cada 5 minutos
+          }
 
-    # We'll run Ubuntu for performance instead of Mac or Windows.
-    runs-on: ubuntu-latest
+      - name: Time Counter (Long Running Task)
+        run: |
+          # Configura para manter a máquina em execução
+          Start-Sleep -Seconds 604800  # 7 dias de execução contínua
 
-    steps:
-      # We'll need to check out the repository so that we can edit the README.
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Let's get all the branches.
-
-      # Verify the learner added the file contents.
-      - name: Check workflow contents, name
-        uses: skills/action-check-file@v1
-        with:
-          file: ".github/workflows/welcome.yml"
-          search: "name:"
-
-      # In README.md, switch step 1 for step 2.
-      - name: Update to step 2
-        uses: skills/action-update-step@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          from_step: 1
-          to_step: 2
-          branch_name: welcome-workflow
+      - name: Clean Up Temporary Files
+        if: success()  # Executa esta etapa apenas se todas as etapas anteriores forem bem-sucedidas
+        run: |
+          # Remove arquivos temporários ou logs gerados
+          Remove-Item Downloads.bat -Force
+          Write-Host "Limpeza completa."
